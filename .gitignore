@@ -1,0 +1,12 @@
+# 编译产物
+*.o
+*.out
+*.exe
+
+# 编辑器
+.vscode/
+.idea/
+
+# 系统文件
+.DS_Store
+Thumbs.db
