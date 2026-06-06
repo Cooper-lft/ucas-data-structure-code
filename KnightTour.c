@@ -8,7 +8,7 @@ int board [8][8]; // 棋盘,棋盘上结点值表示是第几步到达的
 typedef struct Node{
     int x;  // 横坐标，从0到7，下同
     int y;  // 纵坐标
-    int direction;  // 下一步方位，从0到7(初始为0？)
+    int tried;  // 已经尝试了nextNode的数量,最大为8
 }Node;
 
 Node step_stack [64]; // 记录步数的栈
@@ -59,19 +59,6 @@ void PrintBoard(){
 int offsetX[8] = {-2,-1,1,2,2,1,-1,-2}; // 按照下一步方位从0到7，对应X方向的偏移量
 int offsetY[8] = {1,2,2,1,-1,-2,-2,-1};
 
-// 弹栈只需要top-=1就好了,同时要维护step值，即step-=1。
-// 获取栈顶结点
-Node GettopNode(Node step_stack[]){
-    if(top>=0){
-        return step_stack[top];
-    }else{
-        printf("stack is empty\n");
-        Node empty={0,0,0};
-        return empty;
-    }
-}
- 
-
 
 // 下一步要走的点位合法（不越界且先前未走过）
 int IsValidDirect(int nextNodeX, int nextNodeY){
@@ -94,36 +81,78 @@ int CountBranch(int currNodeX, int currNodeY){
     return count;
 }
 
-// 核心函数:深度优先，失败回溯，尝试走完棋盘
-State KnightTour(Node currNode){
+// 收集当前节点所有合法的下一步，并按照在nextNode处，进一步可能的分支数
+// 从小到大排序
+// 参数是当前节点横纵坐标和当前节点的下一节点的待选数组(元素是方向的取值，0到7)
+// 返回值是待选数组中的节点个数
+int CollectAndSort(int currNodeX,int currNodeY, int candidates[8]){
     Node nextNode;
-    while(top>=0){
-        nextNode.direction = 0;
-        nextNode.x = currNode.x + offsetX[currNode.direction];
-        nextNode.y = currNode.y + offsetY[currNode.direction];
+    int count = 0;
+    // 遍历方向0-7，找出合法方向并收集，记录合法方向个数count
+    for(int direction=0; direction<8; direction++){
+        nextNode.x = currNodeX + offsetX[direction];
+        nextNode.y = currNodeY + offsetY[direction];
         if(IsValidDirect(nextNode.x,nextNode.y)){
-            top++;
-            step++;
-            currNode = nextNode; 
-            step_stack[top] = currNode;  // 走下一步
-            board[currNode.x][currNode.y] = step;
-        }else{
-            step_stack[top].direction++;
-            currNode = step_stack[top]; //  更新当前所在点位的方位，继续尝试
+            candidates[count] = direction; // 待选数组中存放合法方向 
+            count++;
         }
+    }
+    // 冒泡排序，nextNode处的可能分支数从小到大
+    for(int i=0; i < count; i++){
+        for(int j = 0;j<count-1-i;j++){
+            int temp;
+            int nextNodeX_j = currNodeX + offsetX[candidates[j]];
+            int nextNodeY_j = currNodeY + offsetY[candidates[j]];
+            int nextNodeX_j_1 = currNodeX + offsetX[candidates[j+1]];
+            int nextNodeY_j_1 = currNodeY + offsetY[candidates[j+1]];
+            int branch_j = CountBranch(nextNodeX_j,nextNodeY_j);
+            int branch_j_1 = CountBranch(nextNodeX_j_1,nextNodeY_j_1);
+            if(branch_j > branch_j_1){
+                temp = candidates[j];
+                candidates[j] = candidates[j+1];
+                candidates[j+1] = temp;
+            }
+        }
+    }
+    return count;
+}
+
+// 核心函数:深度优先，失败回溯，尝试走完棋盘
+State KnightTour(Node startNode){
+    Node nextNode,currNode;
+    startNode.tried = 0;
+    top = 0;
+    step = 1;
+    board[startNode.x][startNode.y] = step;
+    step_stack[top] = startNode;
+
+    while(top>=0){
+        currNode = step_stack[top];
+        
         if(step == 64){
             return Found;
         }
-        
-        if(step_stack[top].direction>7){  // 说明当前所在点位走不下去了，要回溯
-            board[currNode.x][currNode.y] = 0;
-            top--;
-            step--;
-            currNode = GettopNode(step_stack); // 回溯到上一步
-            currNode.direction += 1; // 尝试下一个方向
-            step_stack[top] = currNode; // 更新在栈中的记录
-        }
+        int candidates[8]; 
+        int cand_count = CollectAndSort(currNode.x,currNode.y,candidates);
 
+        if(currNode.tried < cand_count){ // 还有未尝试的方向
+            int next_dir = candidates[currNode.tried]; // 本次要尝试的方向
+            step_stack[top].tried++;
+            currNode = step_stack[top];
+
+            nextNode.x = currNode.x + offsetX[next_dir];
+            nextNode.y = currNode.y + offsetY[next_dir];
+            nextNode.tried = 0;
+            top++;
+            step++;
+            step_stack[top] = nextNode;  // 走下一步
+            board[nextNode.x][nextNode.y] = step;
+        }else{
+            // 说明当前所在点位走不下去了，要回溯
+            board[currNode.x][currNode.y] = 0;
+            step--;
+            top--;
+        }
     }
     if(top<0){
         printf("没有满足条件的解\n");
@@ -134,25 +163,20 @@ State KnightTour(Node currNode){
 
 
 int main(){
-    Node currNode;
-    currNode.direction = 0;
+    Node startNode;
     InitBoard();
 
     while(1){
         printf("请先后输入初始位置的横坐标和纵坐标（从0到7）:\n");
-        scanf("%d%d",&currNode.x,&currNode.y);
-        if(currNode.x<0 || currNode.x >7 || currNode.y<0 || currNode.y>7){
+        scanf("%d%d",&startNode.x,&startNode.y);
+        if(startNode.x<0 || startNode.x >7 || startNode.y<0 || startNode.y>7){
             printf("输入坐标有误，请重新输入：");
         }else{
             break;
         }
     }
-    step++;
-    top++;
-    board[currNode.x][currNode.y] = step;
-    step_stack[top] = currNode;
 
-    KnightTour(currNode);
+    KnightTour(startNode);
 
     PrintBoard();
     return 0;
